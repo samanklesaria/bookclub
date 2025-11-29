@@ -1,18 +1,21 @@
 import sys
-
+import subprocess
 from pathlib import Path
 from typing import Iterator
 import itertools
+
 import chromadb
 import ollama
 import titles
 from summarize import summarize
 import json
+import os
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QListWidget, QListWidgetItem, QProgressBar,
     QLabel)
 from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt
 
 def embed_text(text: list[str]) -> list[list[float]]:
     """Generate embedding for text using Ollama."""
@@ -24,6 +27,9 @@ def index_book(book_path: str, progress_callback) -> str:
 
     db_name = Path(book_path).stem + "_db"
     db_path = str(Path(book_path).parent / db_name)
+    if os.path.exists(db_path):
+        progress_callback(f"Database already exists at {db_path}")
+        return db_path
 
     progress_callback(f"Creating database at {db_path}...")
     client = chromadb.PersistentClient(path=db_path)
@@ -46,7 +52,7 @@ def index_book(book_path: str, progress_callback) -> str:
         progress_callback(f"Summarizing {chapter}")
         summaries.append((chapter, summarize('\n'.join([p[1] for p in pairs]))))
 
-    collection.modify(metadata={'summaries': json.dumps(summaries)})
+    collection.modify(metadata={'summaries': json.dumps(summaries), 'book_path': book_path})
     return db_path
 
 def search_collection(collection, query: str, n_results: int = 10) -> list[tuple[str, str, float]]:
@@ -99,7 +105,9 @@ def create_search_window(db_path: str):
 
             self.results = QListWidget()
             self.results.setWordWrap(True)
+            self.results.itemDoubleClicked.connect(self.open_in_viewer)
             layout.addWidget(self.results)
+            self.book_path = collection.metadata.get('book_path', '')
             self.show_summaries()
 
         def show_summaries(self):
@@ -108,10 +116,12 @@ def create_search_window(db_path: str):
             for chapter_name, summary in summaries:
                 header = QListWidgetItem(chapter_name)
                 header.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+                header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsSelectable)
                 self.results.addItem(header)
                 for s in summary:
                     summary_item = QListWidgetItem(s.replace("\n", ""))
                     summary_item.setFont(QFont("Arial", 10))
+                    summary_item.setFlags(summary_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
                     self.results.addItem(summary_item)
 
         def perform_search(self):
@@ -131,15 +141,22 @@ def create_search_window(db_path: str):
             for chapter, passages in sorted(grouped.items()):
                 header = QListWidgetItem(f"📖 {chapter}")
                 header.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+                header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsSelectable)
                 self.results.addItem(header)
 
                 for text, similarity in passages:
                     truncated = text[:300] + ('...' if len(text) > 300 else '')
                     item = QListWidgetItem(f"  [{similarity:.2%}] {truncated}")
                     item.setFont(QFont("Arial", 12))
+                    item.setData(Qt.ItemDataRole.UserRole, text[:150])
                     self.results.addItem(item)
 
             self.status.setText(f"Found {len(results)} results")
+
+        def open_in_viewer(self, item: QListWidgetItem):
+            if self.search_input.text().strip():
+                text = item.data(Qt.ItemDataRole.UserRole)
+                subprocess.Popen(['/Applications/calibre.app/Contents/MacOS/ebook-viewer', self.book_path, '--open-at', f'search: {text}'])
 
     return SearchWindow()
 

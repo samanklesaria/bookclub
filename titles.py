@@ -58,6 +58,6 @@ def iter_chapter_paragraphs_(epub_path):
 
             # Get all paragraph tags
             for p in soup.find_all("p"):
-                text = p.get_text(strip=True)
+                text = p.get_text(strip=True, separator=" ")
                 if text:
                     yield (chapter_title, text)
