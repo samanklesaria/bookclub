@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 from typing import Iterator
 import itertools
+import platform
 
 import chromadb
 import ollama
@@ -81,6 +82,15 @@ def create_search_window(db_path: str):
     class SearchWindow(QMainWindow):
         def __init__(self):
             super().__init__()
+            self.system = platform.system()
+            if system == "Darwin":
+                self.ebook_viewer_path = '/Applications/calibre.app/Contents/MacOS/ebook-viewer'
+            elif system == "Linux":
+                self.ebook_viewer_path = 'ebook-viewer'
+            elif system == "Windows":
+                self.ebook_viewer_path = 'ebook-viewer.exe'
+            else:
+                raise ValueError(f"Unsupported system: {system}")
             self.setWindowTitle("Book Search")
             self.setGeometry(100, 100, 900, 700)
 
@@ -156,7 +166,7 @@ def create_search_window(db_path: str):
         def open_in_viewer(self, item: QListWidgetItem):
             if self.search_input.text().strip():
                 text = item.data(Qt.ItemDataRole.UserRole)
-                subprocess.Popen(['/Applications/calibre.app/Contents/MacOS/ebook-viewer', self.book_path, '--open-at', f'search: {text}'])
+                subprocess.Popen([self.ebook_viewer_path, self.book_path, '--open-at', f'search: {text}'])
 
     return SearchWindow()
 
